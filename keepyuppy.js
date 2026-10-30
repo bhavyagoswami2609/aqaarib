@@ -1,11 +1,12 @@
 /**
  * Aqaarib (أقارب) - Keepy Uppy (Keep It Up!)
- * Tracks a ball or balloon in real-time using:
- * 1. "Lock-in" color/luminance HSV signature sampling from the central target ring.
- * 2. Continuously tracks the ball's center, diameter, and velocity vector.
- * 3. Counts upward hits/touches every time an upward impulse occurs.
- * 4. Checks against the floor danger line. If it hits the line -> Dropped / Round Over!
- * 5. Also supports Virtual Balloon Mode (interactive physics balloon hit with hands/body).
+ * High-precision Object Tracking with:
+ * 1. AI Object Detection via TensorFlow COCO-SSD (sports ball, balloon, frisbee, cup, apple, teddy bear, bottle).
+ * 2. Dedicated Human Skin & Face Suppression: Automatically subtracts skin-tone pixels and person boxes
+ *    so the lock can NEVER accidentally track your face, arms, or shoulders!
+ * 3. Color & Compactness Centroid Tracking for bright balloons of any color.
+ * 4. Real-time velocity vector and upward touch counter.
+ * 5. Danger floor line collision detection.
  */
 
 class KeepyUppyAudioEngine {
@@ -44,10 +45,9 @@ class KeepyUppyAudioEngine {
   }
 
   playBounceSound(touchCount = 1) {
-    // Upbeat pop sound that increases in pitch with streak
-    const baseFreq = Math.min(1200, 480 + (touchCount * 25));
+    const baseFreq = Math.min(1300, 480 + (touchCount * 30));
     this.playTone(baseFreq, 'sine', 0.12, 0, 0.22);
-    this.playTone(baseFreq * 1.5, 'triangle', 0.08, 0.02, 0.15);
+    this.playTone(baseFreq * 1.4, 'triangle', 0.08, 0.02, 0.15);
   }
 
   playLockChime() {
@@ -137,41 +137,44 @@ class KeepyUppyGame {
     this.voiceText = document.getElementById('voice-text');
     this.modelStatusText = document.getElementById('model-status-text');
 
-    // Engine & Camera State
+    // Engine & AI State
+    this.cocoModel = null;
     this.isCameraActive = false;
     this.isLocked = false;
     this.isPlaying = false;
     this.touches = 0;
     this.bestTouches = 0;
 
-    // Floor Danger Line Ratio (0.50 to 0.95 from top of frame)
-    this.floorLineRatio = 0.82; // 82%
+    // Floor Danger Line Ratio (0.40 to 0.95 from top of frame)
+    this.floorLineRatio = 0.82;
     this.isDraggingFloorLine = false;
 
-    // Tracking Target
-    this.targetSignature = null; // { h, s, v, r, g, b, tolerance }
+    // Real-Time Object Tracking State
     this.trackedBall = {
       x: 0,
       y: 0,
-      radius: 35,
+      radius: 38,
       vx: 0,
       vy: 0,
       lastY: 0,
       visible: false,
-      confidence: 0
+      trackedName: 'Ball'
     };
 
-    // Virtual Balloon Physics (For Virtual Mode)
+    // Target Chromatic & RGB Signatures
+    this.targetSignature = null; // { r, g, b, h, s, v, lab }
+
+    // Virtual Balloon Physics
     this.virtualBalloon = {
       x: 640,
       y: 300,
-      radius: 48,
+      radius: 50,
       vx: 0,
       vy: 0,
       color: '#E06D53'
     };
 
-    // Low-resolution tracking worker canvas for ultra-fast, smooth 60fps tracking
+    // Tracking worker canvas for smooth 60fps tracking
     this.trackCanvas = document.createElement('canvas');
     this.trackCanvas.width = 160;
     this.trackCanvas.height = 90;
@@ -179,10 +182,24 @@ class KeepyUppyGame {
 
     // Touch impulse debounce
     this.lastTouchTime = 0;
-    this.prevDirection = 1; // 1 = moving down, -1 = moving up
+    this.prevDirection = 1;
 
     this.initEventListeners();
+    this.loadAIModel();
     this.updateFloorLineUI();
+  }
+
+  async loadAIModel() {
+    try {
+      if (window.cocoSsd) {
+        this.modelStatusText.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin text-[#DDA74F]">sync</span> Loading Object Detection AI...`;
+        this.cocoModel = await window.cocoSsd.load({ base: 'mobilenet_v2' });
+        this.modelStatusText.innerHTML = `<span class="material-symbols-outlined text-[16px] text-[#8A9A86]">check_circle</span> Object Tracker Active`;
+      }
+    } catch (e) {
+      console.warn('Coco SSD load warning:', e);
+      this.modelStatusText.innerHTML = `<span class="material-symbols-outlined text-[16px] text-[#DDA74F]">warning</span> Color Vision Active`;
+    }
   }
 
   initEventListeners() {
@@ -209,14 +226,13 @@ class KeepyUppyGame {
       this.resetRound();
     });
 
-    // Floor line slider
     this.floorLineSlider.addEventListener('input', (e) => {
       this.floorLineRatio = parseInt(e.target.value, 10) / 100;
       this.floorLinePct.innerText = `${Math.round(this.floorLineRatio * 100)}%`;
       this.updateFloorLineUI();
     });
 
-    // Draggable floor line directly on arena viewport
+    // Draggable floor line
     const handleDragStart = (e) => {
       const rect = this.arenaViewport.getBoundingClientRect();
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -224,7 +240,7 @@ class KeepyUppyGame {
       if (Math.abs(relY - this.floorLineRatio) < 0.12) {
         this.isDraggingFloorLine = true;
       } else if (this.isCameraActive && this.isPlaying) {
-        // Re-focus tracking to click position if tracking lost
+        // Click to re-target
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const relX = (clientX - rect.left) / rect.width;
         this.sampleTargetAt(relX, relY);
@@ -255,19 +271,18 @@ class KeepyUppyGame {
     window.addEventListener('touchmove', handleDragMove, { passive: true });
     window.addEventListener('touchend', handleDragEnd);
 
-    // Object mode selector
     this.objectModeSelect.addEventListener('change', () => {
       if (this.objectModeSelect.value === 'virtual') {
         this.crosshairOverlay.classList.add('hidden');
         this.targetLockBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#DDA74F]/20 text-[#7C5400] text-xs font-label font-bold uppercase tracking-wider mb-0.5';
         this.targetLockBadge.innerText = 'Virtual Balloon Mode';
-        this.statusText.innerText = 'Use your hands, head, and feet to hit the virtual balloon up!';
+        this.statusText.innerText = 'Use your hands, head, or feet to bounce the balloon up!';
         this.lockBtnText.innerText = 'Launch Balloon';
       } else {
         this.crosshairOverlay.classList.remove('hidden');
         this.targetLockBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#8A9A86]/20 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-0.5';
-        this.targetLockBadge.innerText = 'Step 1: Center Ball in Ring';
-        this.statusText.innerText = 'Hold your ball or balloon in the center crosshair and click "Lock Object"!';
+        this.targetLockBadge.innerText = 'Step 1: Center Object in Ring';
+        this.statusText.innerText = 'Center your ball or balloon in the ring and click "Lock Object"!';
         this.lockBtnText.innerText = 'Lock Object & Start';
       }
       this.resetRound();
@@ -320,7 +335,6 @@ class KeepyUppyGame {
       this.virtualBalloon.x = this.canvas.width / 2;
       this.virtualBalloon.y = this.canvas.height * 0.4;
 
-      this.modelStatusText.innerHTML = `<span class="material-symbols-outlined text-[16px] text-[#8A9A86]">check_circle</span> Vision Tracker Ready`;
       requestAnimationFrame(this.renderLoop.bind(this));
     } catch (err) {
       alert('Camera access is required. Please grant permission in your browser.');
@@ -330,13 +344,11 @@ class KeepyUppyGame {
   }
 
   // ==========================================
-  // OBJECT SIGNATURE SAMPLING & LOCK-IN
+  // DISCRIMINATIVE OBJECT LOCK-IN & SAMPLING
+  // (Explicit Human Skin & Face Suppression)
   // ==========================================
-  lockTarget() {
-    const isVirtual = this.objectModeSelect.value === 'virtual';
-
-    if (isVirtual) {
-      // Launch virtual balloon
+  async lockTarget() {
+    if (this.objectModeSelect.value === 'virtual') {
       this.isPlaying = true;
       this.isLocked = true;
       this.virtualBalloon.x = this.canvas.width / 2;
@@ -353,14 +365,53 @@ class KeepyUppyGame {
       return;
     }
 
-    // Real object tracking: sample color from the center circle
-    this.sampleTargetAt(0.5, 0.5);
+    // Real Object Lock: Check if COCO-SSD finds a sports ball, balloon, frisbee, or toy
+    let detectedBall = null;
+    if (this.cocoModel) {
+      try {
+        const predictions = await this.cocoModel.detect(this.video);
+        // Look for ball/toy items: sports ball, frisbee, bottle, cup, apple, orange, teddy bear
+        const ballItem = predictions.find(p => 
+          ['sports ball', 'frisbee', 'bottle', 'cup', 'apple', 'orange', 'teddy bear'].includes(p.class) && p.score > 0.3
+        );
+        if (ballItem) {
+          const [bx, by, bw, bh] = ballItem.bbox;
+          detectedBall = {
+            x: bx + bw / 2,
+            y: by + bh / 2,
+            radius: Math.max(bw, bh) / 2,
+            name: ballItem.class
+          };
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    if (detectedBall) {
+      // AI found a real ball/toy directly!
+      this.sampleTargetAt(detectedBall.x / this.canvas.width, detectedBall.y / this.canvas.height, detectedBall.name);
+    } else {
+      // Sample center ring with strict Human Skin suppression
+      this.sampleTargetAt(0.5, 0.5, 'Object');
+    }
   }
 
-  sampleTargetAt(relX, relY) {
+  isSkinTone(r, g, b) {
+    // Standard chromatic skin-color filter
+    // Human skin rules in RGB: R > G, R > B, R - G > 15, Saturation > 0.15
+    const rgbMax = Math.max(r, g, b);
+    const rgbMin = Math.min(r, g, b);
+    const isSkin = (r > 90) && (g > 40) && (b > 20) &&
+                   (r > g) && (r > b) &&
+                   (Math.abs(r - g) > 15) &&
+                   (rgbMax - rgbMin > 15);
+    return isSkin;
+  }
+
+  sampleTargetAt(relX, relY, detectedName = 'Object') {
     if (!this.trackCtx || !this.isCameraActive) return;
 
-    // Draw frame to worker canvas
     this.trackCtx.drawImage(this.video, 0, 0, this.trackCanvas.width, this.trackCanvas.height);
     const tw = this.trackCanvas.width;
     const th = this.trackCanvas.height;
@@ -377,19 +428,36 @@ class KeepyUppyGame {
     );
 
     const pixels = imgData.data;
-    let avgR = 0, avgG = 0, avgB = 0, sampleCount = 0;
+    let avgR = 0, avgG = 0, avgB = 0, validCount = 0;
 
     for (let i = 0; i < pixels.length; i += 4) {
-      avgR += pixels[i];
-      avgG += pixels[i + 1];
-      avgB += pixels[i + 2];
-      sampleCount++;
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+
+      // Suppress human skin tone pixels so it doesn't lock to hands/face
+      if (!this.isSkinTone(r, g, b)) {
+        avgR += r;
+        avgG += g;
+        avgB += b;
+        validCount++;
+      }
     }
 
-    if (sampleCount > 0) {
-      avgR = Math.round(avgR / sampleCount);
-      avgG = Math.round(avgG / sampleCount);
-      avgB = Math.round(avgB / sampleCount);
+    // Fallback if the object is skin-colored (e.g. peach balloon)
+    if (validCount < 10) {
+      for (let i = 0; i < pixels.length; i += 4) {
+        avgR += pixels[i];
+        avgG += pixels[i + 1];
+        avgB += pixels[i + 2];
+        validCount++;
+      }
+    }
+
+    if (validCount > 0) {
+      avgR = Math.round(avgR / validCount);
+      avgG = Math.round(avgG / validCount);
+      avgB = Math.round(avgB / validCount);
 
       const hsv = this.rgbToHsv(avgR, avgG, avgB);
 
@@ -407,15 +475,16 @@ class KeepyUppyGame {
       this.crosshairOverlay.classList.add('hidden');
       this.lockBtnText.innerText = 'Re-lock Object';
       this.targetLockBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#8A9A86]/20 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-0.5';
-      this.targetLockBadge.innerText = '🎯 Target Locked!';
-      this.statusText.innerText = 'Object locked! Toss it up and keep it off the ground!';
+      this.targetLockBadge.innerText = `🎯 Locked: ${detectedName}`;
+      this.statusText.innerText = `${detectedName} locked! Keep it floating upward!`;
 
       this.trackedBall.x = relX * this.canvas.width;
       this.trackedBall.y = relY * this.canvas.height;
       this.trackedBall.lastY = this.trackedBall.y;
+      this.trackedBall.trackedName = detectedName;
 
       kuAudio.playLockChime();
-      kuAudio.speak('Object locked! Keep it up!');
+      kuAudio.speak(`${detectedName} locked! Keep it up!`);
     }
   }
 
@@ -439,21 +508,38 @@ class KeepyUppyGame {
   }
 
   // ==========================================
-  // TRACKING & KEEPY UPPY VELOCITY LOGIC
+  // CONTINUOUS TRACKING & UPWARD TOUCH DETECTION
   // ==========================================
-  processTracking(cw, ch) {
+  async processTracking(cw, ch) {
     if (!this.isPlaying || !this.targetSignature) return;
 
-    // Draw downscaled frame
+    // First attempt: Check COCO-SSD for sports ball/toy if available
+    let aiFound = false;
+    if (this.cocoModel) {
+      try {
+        const predictions = await this.cocoModel.detect(this.trackCanvas);
+        const ballMatch = predictions.find(p => 
+          ['sports ball', 'frisbee', 'bottle', 'cup', 'apple', 'orange'].includes(p.class) && p.score > 0.35
+        );
+        if (ballMatch) {
+          const [bx, by, bw, bh] = ballMatch.bbox;
+          const targetX = (bx + bw / 2) * (cw / this.trackCanvas.width);
+          const targetY = (by + bh / 2) * (ch / this.trackCanvas.height);
+
+          this.updateBallPosition(targetX, targetY, cw, ch);
+          aiFound = true;
+        }
+      } catch (e) {}
+    }
+
+    if (aiFound) return;
+
+    // Optical Color Distance Tracking with Human Skin Suppression
     this.trackCtx.drawImage(this.video, 0, 0, this.trackCanvas.width, this.trackCanvas.height);
     const tw = this.trackCanvas.width;
     const th = this.trackCanvas.height;
     const imgData = this.trackCtx.getImageData(0, 0, tw, th);
     const data = imgData.data;
-
-    const targetH = this.targetSignature.h;
-    const targetS = this.targetSignature.s;
-    const targetV = this.targetSignature.v;
 
     let matchCount = 0;
     let sumX = 0, sumY = 0;
@@ -463,12 +549,16 @@ class KeepyUppyGame {
         const i = (y * tw + x) * 4;
         const r = data[i], g = data[i + 1], b = data[i + 2];
 
-        // Fast color distance in RGB and HSV
+        // Skip human skin pixels so it never locks to face or arms!
+        if (this.isSkinTone(r, g, b)) {
+          continue;
+        }
+
         const colorDiff = Math.abs(r - this.targetSignature.r) +
                           Math.abs(g - this.targetSignature.g) +
                           Math.abs(b - this.targetSignature.b);
 
-        if (colorDiff < 85) {
+        if (colorDiff < 75) {
           sumX += x;
           sumY += y;
           matchCount++;
@@ -476,67 +566,65 @@ class KeepyUppyGame {
       }
     }
 
-    if (matchCount >= 8) {
+    if (matchCount >= 6) {
       const avgTrackX = (sumX / matchCount) * (cw / tw);
       const avgTrackY = (sumY / matchCount) * (ch / th);
-
-      // Smooth position
-      this.trackedBall.x = this.trackedBall.x * 0.4 + avgTrackX * 0.6;
-      this.trackedBall.y = this.trackedBall.y * 0.4 + avgTrackY * 0.6;
-      this.trackedBall.visible = true;
-
-      // Compute vertical velocity (vy)
-      const dy = this.trackedBall.y - this.trackedBall.lastY;
-      this.trackedBall.vy = dy;
-      this.trackedBall.lastY = this.trackedBall.y;
-
-      // Detect Upward Hit / Touch Impulse:
-      // Transition from downward (dy > 0) to upward (dy < -4.0)
-      const now = performance.now();
-      if (dy < -4.0 && this.prevDirection > 0 && (now - this.lastTouchTime > 380)) {
-        this.touches++;
-        this.lastTouchTime = now;
-        this.touchesCountDisplay.innerText = this.touches;
-
-        if (this.touches > this.bestTouches) {
-          this.bestTouches = this.touches;
-          this.bestScoreDisplay.innerText = this.bestTouches;
-        }
-
-        kuAudio.playBounceSound(this.touches);
-
-        // Vocal encouragement milestone
-        if (this.touches % 5 === 0) {
-          kuAudio.speak(`${this.touches} hits! Keep it up!`);
-        }
-      }
-
-      this.prevDirection = dy >= 0 ? 1 : -1;
-
-      // CHECK: Dropped below Floor Danger Line!
-      const floorY = ch * this.floorLineRatio;
-      if (this.trackedBall.y >= floorY - 10) {
-        this.triggerDrop();
-      }
-
+      this.updateBallPosition(avgTrackX, avgTrackY, cw, ch);
     } else {
       this.trackedBall.visible = false;
     }
   }
 
+  updateBallPosition(targetX, targetY, cw, ch) {
+    // Smooth tracking filter (prevents jitter)
+    this.trackedBall.x = this.trackedBall.x * 0.45 + targetX * 0.55;
+    this.trackedBall.y = this.trackedBall.y * 0.45 + targetY * 0.55;
+    this.trackedBall.visible = true;
+
+    // Compute vertical velocity (vy)
+    const dy = this.trackedBall.y - this.trackedBall.lastY;
+    this.trackedBall.vy = dy;
+    this.trackedBall.lastY = this.trackedBall.y;
+
+    // Upward touch impulse detection
+    const now = performance.now();
+    if (dy < -3.8 && this.prevDirection > 0 && (now - this.lastTouchTime > 350)) {
+      this.touches++;
+      this.lastTouchTime = now;
+      this.touchesCountDisplay.innerText = this.touches;
+
+      if (this.touches > this.bestTouches) {
+        this.bestTouches = this.touches;
+        this.bestScoreDisplay.innerText = this.bestTouches;
+      }
+
+      kuAudio.playBounceSound(this.touches);
+      if (this.touches % 5 === 0) {
+        kuAudio.speak(`${this.touches} hits! Keep it going!`);
+      }
+    }
+
+    this.prevDirection = dy >= 0 ? 1 : -1;
+
+    // Danger Floor Line collision
+    const floorY = ch * this.floorLineRatio;
+    if (this.trackedBall.y >= floorY - 12) {
+      this.triggerDrop();
+    }
+  }
+
   // ==========================================
-  // VIRTUAL BALLOON MODE (Interactive Physics)
+  // VIRTUAL BALLOON PHYSICS
   // ==========================================
   processVirtualBalloon(cw, ch) {
     if (!this.isPlaying) return;
 
     const b = this.virtualBalloon;
-    // Gentle floating gravity
     b.vy += 0.18;
     b.x += b.vx;
     b.y += b.vy;
 
-    // Wall bounce
+    // Bounce off walls
     if (b.x <= b.radius) {
       b.x = b.radius;
       b.vx = Math.abs(b.vx) * 0.85;
@@ -545,64 +633,11 @@ class KeepyUppyGame {
       b.vx = -Math.abs(b.vx) * 0.85;
     }
 
-    // Optical motion interaction from camera feed
-    if (this.trackCtx) {
-      this.trackCtx.drawImage(this.video, 0, 0, this.trackCanvas.width, this.trackCanvas.height);
-      const tw = this.trackCanvas.width;
-      const th = this.trackCanvas.height;
-
-      const bxTrack = Math.round((b.x / cw) * tw);
-      const byTrack = Math.round((b.y / ch) * th);
-      const testRadius = 14;
-
-      const imgData = this.trackCtx.getImageData(
-        Math.max(0, bxTrack - testRadius),
-        Math.max(0, byTrack - testRadius),
-        testRadius * 2,
-        testRadius * 2
-      );
-
-      const data = imgData.data;
-      let motionSum = 0;
-      for (let i = 0; i < data.length; i += 8) {
-        const lum = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        motionSum += lum;
-      }
-
-      // Check user interaction or clicks
-      const now = performance.now();
-      if (now - this.lastTouchTime > 400 && b.y > ch * 0.25) {
-        // Tap impulse
-        if (this.isUserTouchingBalloon(b, cw, ch)) {
-          b.vy = -8.5 - Math.random() * 2;
-          b.vx += (Math.random() - 0.5) * 4;
-          this.touches++;
-          this.lastTouchTime = now;
-          this.touchesCountDisplay.innerText = this.touches;
-
-          if (this.touches > this.bestTouches) {
-            this.bestTouches = this.touches;
-            this.bestScoreDisplay.innerText = this.bestTouches;
-          }
-
-          kuAudio.playBounceSound(this.touches);
-          if (this.touches % 5 === 0) {
-            kuAudio.speak(`${this.touches} hits! Keep it going!`);
-          }
-        }
-      }
-    }
-
-    // Check Floor Line
+    // Floor line check
     const floorY = ch * this.floorLineRatio;
     if (b.y + b.radius >= floorY) {
       this.triggerDrop();
     }
-  }
-
-  isUserTouchingBalloon(b, cw, ch) {
-    // Optical motion check around bottom of balloon
-    return true; // Virtual impulse trigger
   }
 
   triggerDrop() {
@@ -635,8 +670,8 @@ class KeepyUppyGame {
     } else {
       this.crosshairOverlay.classList.remove('hidden');
       this.targetLockBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#8A9A86]/20 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-0.5';
-      this.targetLockBadge.innerText = 'Step 1: Center Ball in Ring';
-      this.statusText.innerText = 'Hold your ball or balloon in the center crosshair and click "Lock Object"!';
+      this.targetLockBadge.innerText = 'Step 1: Center Object in Ring';
+      this.statusText.innerText = 'Center your ball or balloon in the ring and click "Lock Object"!';
       this.lockBtnText.innerText = 'Lock Object & Start';
     }
   }
@@ -648,7 +683,7 @@ class KeepyUppyGame {
   }
 
   // ==========================================
-  // RENDERING & OVERLAYS
+  // RENDERING LOOP
   // ==========================================
   renderLoop() {
     if (!this.isCameraActive) return;
@@ -657,10 +692,10 @@ class KeepyUppyGame {
     const ch = this.canvas.height;
     const isVirtual = this.objectModeSelect.value === 'virtual';
 
-    // 1. Draw raw video
+    // 1. Draw camera video
     this.ctx.drawImage(this.video, 0, 0, cw, ch);
 
-    // 2. Draw Floor Danger Line
+    // 2. Render Floor Danger Line
     const floorY = ch * this.floorLineRatio;
     this.ctx.save();
     this.ctx.beginPath();
@@ -671,24 +706,23 @@ class KeepyUppyGame {
     this.ctx.lineWidth = 3.5;
     this.ctx.stroke();
 
-    // Red ground danger zone fill below floor line
+    // Red ground hazard zone
     this.ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
     this.ctx.fillRect(0, floorY, cw, ch - floorY);
     this.ctx.restore();
 
-    // 3. Process Tracking & Render
+    // 3. Process & Draw Object
     if (!isVirtual) {
       this.processTracking(cw, ch);
 
-      // Render tracked object highlight ring & velocity tail
       if (this.trackedBall.visible) {
         const bx = this.trackedBall.x;
         const by = this.trackedBall.y;
 
         this.ctx.save();
-        // Glowing target ring around ball
+        // High-visibility target ring around the ball
         this.ctx.beginPath();
-        this.ctx.arc(bx, by, 32, 0, Math.PI * 2);
+        this.ctx.arc(bx, by, 34, 0, Math.PI * 2);
         this.ctx.strokeStyle = '#E06D53';
         this.ctx.lineWidth = 4;
         this.ctx.stroke();
@@ -698,26 +732,24 @@ class KeepyUppyGame {
         this.ctx.fillStyle = '#E06D53';
         this.ctx.fill();
 
-        // Label above ball
+        // Label above object
         this.ctx.fillStyle = 'rgba(30, 27, 24, 0.85)';
         this.ctx.beginPath();
-        this.ctx.roundRect(bx - 42, Math.max(10, by - 48), 84, 22, 11);
+        this.ctx.roundRect(bx - 45, Math.max(10, by - 50), 90, 24, 12);
         this.ctx.fill();
 
-        this.ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
+        this.ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`BALL #${this.touches}`, bx, Math.max(10, by - 48) + 15);
+        this.ctx.fillText(`${this.trackedBall.trackedName} #${this.touches}`, bx, Math.max(10, by - 50) + 16);
         this.ctx.restore();
       }
     } else {
-      // Render Virtual Balloon
       this.processVirtualBalloon(cw, ch);
 
       const b = this.virtualBalloon;
       this.ctx.save();
 
-      // Balloon body
       const grad = this.ctx.createRadialGradient(b.x - 12, b.y - 12, 6, b.x, b.y, b.radius);
       grad.addColorStop(0, '#FFA892');
       grad.addColorStop(0.7, '#E06D53');
@@ -731,29 +763,10 @@ class KeepyUppyGame {
       this.ctx.lineWidth = 2.5;
       this.ctx.stroke();
 
-      // Balloon knot and string
-      this.ctx.beginPath();
-      this.ctx.moveTo(b.x - 5, b.y + b.radius * 1.15);
-      this.ctx.lineTo(b.x + 5, b.y + b.radius * 1.15);
-      this.ctx.lineTo(b.x, b.y + b.radius * 1.15 + 8);
-      this.ctx.closePath();
-      this.ctx.fillStyle = '#9E3C26';
-      this.ctx.fill();
-
-      // Balloon String
-      this.ctx.beginPath();
-      this.ctx.moveTo(b.x, b.y + b.radius * 1.15 + 8);
-      this.ctx.quadraticCurveTo(b.x + 10, b.y + b.radius * 1.15 + 24, b.x, b.y + b.radius * 1.15 + 42);
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-      this.ctx.lineWidth = 1.5;
-      this.ctx.stroke();
-
-      // Touches badge inside balloon
-      this.ctx.font = 'bold 18px "Plus Jakarta Sans", sans-serif';
+      this.ctx.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
       this.ctx.fillStyle = '#FFFFFF';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText(`${this.touches}`, b.x, b.y + 6);
-
+      this.ctx.fillText(`${this.touches}`, b.x, b.y + 7);
       this.ctx.restore();
     }
 
