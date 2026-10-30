@@ -138,13 +138,21 @@ class SoundFXEngine {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.15;
-      utterance.pitch = 1.05;
+      // Natural pacing and pitch for lively human game announcer
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
       utterance.volume = 1.0;
       
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha')));
-      if (preferredVoice) utterance.voice = preferredVoice;
+      // Prioritize natural, neural, human-sounding voices (Apple Samantha/Daniel/Karen, Google US English, Natural, Neural)
+      const humanVoice = voices.find(v => 
+        (v.lang.startsWith('en') || v.lang.includes('US') || v.lang.includes('GB')) &&
+        (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Samantha') || 
+         v.name.includes('Daniel') || v.name.includes('Karen') || v.name.includes('Serena') || 
+         v.name.includes('Google US English') || v.name.includes('Arthur'))
+      ) || voices.find(v => v.lang.startsWith('en') && !v.name.includes('Albert') && !v.name.includes('Bad News') && !v.name.includes('Whisper'));
+
+      if (humanVoice) utterance.voice = humanVoice;
 
       window.speechSynthesis.speak(utterance);
     } catch (e) {
@@ -264,6 +272,13 @@ class RedLightGreenLightGame {
     this.diffCanvas.height = 90;
     this.diffCtx = this.diffCanvas.getContext('2d', { willReadFrequently: true });
 
+    // Recorder state
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
+    this.recordedBlobUrl = null;
+    this.exportRecordingBtn = document.getElementById('export-recording-btn');
+    this.recordingIndicator = document.getElementById('recording-indicator');
+
     this.initEventListeners();
     this.initPoseDetector();
     this.updateFinishLineUI();
@@ -324,7 +339,7 @@ class RedLightGreenLightGame {
       const rect = this.arenaViewport.getBoundingClientRect();
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       let newRatio = (clientY - rect.top) / rect.height;
-      newRatio = Math.max(0.12, Math.min(0.85, newRatio));
+      newRatio = Math.max(0.01, Math.min(0.99, newRatio));
       this.finishLineRatio = newRatio;
       this.finishLineSlider.value = Math.round(newRatio * 100);
       this.finishLinePct.innerText = `${Math.round(newRatio * 100)}%`;
@@ -354,6 +369,12 @@ class RedLightGreenLightGame {
         this.voiceText.innerText = 'Muted';
       }
     });
+
+    if (this.exportRecordingBtn) {
+      this.exportRecordingBtn.addEventListener('click', () => {
+        this.downloadRecording();
+      });
+    }
   }
 
   updateFinishLineUI() {
@@ -490,10 +511,78 @@ class RedLightGreenLightGame {
     }, 850);
   }
 
+  startRecording() {
+    try {
+      this.recordedChunks = [];
+      if (this.recordedBlobUrl) {
+        URL.revokeObjectURL(this.recordedBlobUrl);
+        this.recordedBlobUrl = null;
+      }
+      if (this.exportRecordingBtn) {
+        this.exportRecordingBtn.classList.add('hidden');
+      }
+
+      const canvasStream = this.canvas.captureStream(30);
+      const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+      let chosenMime = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+
+      this.mediaRecorder = new MediaRecorder(canvasStream, chosenMime ? { mimeType: chosenMime } : undefined);
+
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          this.recordedChunks.push(e.data);
+        }
+      };
+
+      this.mediaRecorder.onstop = () => {
+        if (this.recordedChunks.length > 0) {
+          const blob = new Blob(this.recordedChunks, { type: chosenMime || 'video/webm' });
+          this.recordedBlobUrl = URL.createObjectURL(blob);
+          if (this.exportRecordingBtn) {
+            this.exportRecordingBtn.classList.remove('hidden');
+          }
+        }
+        if (this.recordingIndicator) {
+          this.recordingIndicator.classList.add('hidden');
+        }
+      };
+
+      this.mediaRecorder.start(250);
+      if (this.recordingIndicator) {
+        this.recordingIndicator.classList.remove('hidden');
+      }
+    } catch (err) {
+      console.warn('MediaRecorder error:', err);
+    }
+  }
+
+  stopRecording() {
+    try {
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop();
+      }
+    } catch (e) {
+      console.warn('Error stopping recording:', e);
+    }
+  }
+
+  downloadRecording() {
+    if (!this.recordedBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = this.recordedBlobUrl;
+    a.download = `Aqaarib_RedLight_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   startRound() {
     this.remainingSec = this.roundDurationSec;
     this.roundStartTime = performance.now();
     this.updateTimerDisplay();
+
+    // Start video recording of round
+    this.startRecording();
 
     const ch = this.canvas.height;
     const finishY = ch * this.finishLineRatio;
@@ -632,6 +721,7 @@ class RedLightGreenLightGame {
   }
 
   resetGame() {
+    this.stopRecording();
     this.resetRoundState();
     this.winnerOverlay.classList.add('hidden');
     this.countdownOverlay.classList.add('hidden');
@@ -644,6 +734,7 @@ class RedLightGreenLightGame {
     clearTimeout(this.stateTimeout);
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.updateSignalUI('');
+    this.stopRecording();
 
     if (winner) {
       soundEngine.playVictoryFanfare();

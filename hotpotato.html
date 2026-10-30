@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html class="overflow-x-hidden" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Aqaarib | Camera Hot Potato</title>
+
+  <!-- Google Fonts: Newsreader (Headline), Hanken Grotesk (Body), Plus Jakarta Sans (Label & UI) -->
+  <link href="https://fonts.googleapis.com" rel="preconnect"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..800;1,300..800&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#FAF6F2",
+            "surface-low": "#F4ECE5",
+            "surface-card": "#FFFFFF",
+            "on-surface": "#1E1B18",
+            "on-surface-muted": "#6E6761",
+            "primary": "#E06D53",
+            "primary-hover": "#CB5C43",
+            "secondary": "#8A9A86",
+            "tertiary": "#DDA74F",
+            "neutral-dark": "#1E1B18",
+            "border-subtle": "#E9E1DC",
+            "border-medium": "#D8CCC4"
+          },
+          fontFamily: {
+            "headline": ["Newsreader", "serif"],
+            "body": ["Hanken Grotesk", "sans-serif"],
+            "label": ["Plus Jakarta Sans", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- TensorFlow.js and Pose Detection (100% Free, runs client-side in browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@latest/dist/pose-detection.min.js"></script>
+
+  <style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-width: 100vw;
+        overflow-x: hidden;
+        background-color: #FAF6F2;
+        scroll-behavior: smooth;
+        font-family: 'Hanken Grotesk', sans-serif;
+        color: #1E1B18;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #D8CCC4;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  </style>
+</head>
+
+<body class="bg-[#FAF6F2] font-body text-[#1E1B18] antialiased relative overflow-x-hidden min-h-screen w-full min-w-full">
+
+  <!-- Clean, translucent kinetic background dot grid from the template -->
+  <canvas class="fixed inset-0 pointer-events-none z-0 w-screen min-w-full h-full overflow-hidden opacity-90" id="bg-kinetic-canvas"></canvas>
+
+  <!-- Sticky Floating Header -->
+  <header class="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+    <div class="pointer-events-auto h-16 max-w-5xl w-full mx-auto px-4 sm:px-6 bg-[#FFFFFF]/95 backdrop-blur-md rounded-full shadow-sm flex items-center justify-between gap-2 sm:gap-4 transition-all duration-300 border border-[#E9E1DC]">
+      
+      <!-- Brand Logo -->
+      <a href="index.html" class="flex items-center gap-3 shrink-0 group">
+        <div class="w-10 h-10 rounded-full bg-[#FAF0EC] flex items-center justify-center text-[#E06D53] group-hover:scale-105 transition-transform">
+          <span class="material-symbols-outlined text-[24px]">sports_esports</span>
+        </div>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="font-headline text-xl text-[#1E1B18] tracking-tight font-medium">Aqaarib</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-[#E06D53]/10 text-[#E06D53] font-label font-semibold">أقارب</span>
+          </div>
+          <span class="text-[11px] font-label text-[#6E6761] -mt-1 hidden sm:block">Where fun meets family</span>
+        </div>
+      </a>
+
+      <!-- Navigation Pills -->
+      <nav class="flex items-center p-1 bg-[#F4ECE5] rounded-full gap-1">
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-medium text-[#6E6761] hover:text-[#1E1B18] hover:bg-[#FFFFFF] transition-all flex items-center gap-1.5" href="index.html">
+          <span class="material-symbols-outlined text-[16px]">home</span>
+          <span>Home</span>
+        </a>
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-medium text-[#6E6761] hover:text-[#1E1B18] hover:bg-[#FFFFFF] transition-all flex items-center gap-1.5" href="redlight.html">
+          <span class="material-symbols-outlined text-[16px]">traffic</span>
+          <span>Red Light Green Light</span>
+        </a>
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-semibold bg-[#E06D53] text-white shadow-sm hover:bg-[#CB5C43] transition-all flex items-center gap-1.5" href="hotpotato.html">
+          <span class="material-symbols-outlined text-[16px]">timer</span>
+          <span>Camera Hot Potato</span>
+        </a>
+      </nav>
+
+      <!-- Action Toggles -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="toggle-voice-btn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F4ECE5] text-[#1E1B18] hover:bg-[#FFFFFF] transition-all text-xs font-label" title="Toggle Voice Announcer" type="button">
+          <span class="material-symbols-outlined text-[18px] text-[#E06D53]" id="voice-icon">volume_up</span>
+          <span class="hidden lg:inline font-semibold" id="voice-text">Voice On</span>
+        </button>
+
+        <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#8A9A86]/15 text-[#3A4E37] font-label text-xs">
+          <span class="w-2 h-2 rounded-full bg-[#8A9A86] animate-pulse"></span>
+          <span>Hot Potato Arena</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="relative z-10 w-full pt-24 bg-transparent max-w-[1280px] mx-auto px-4 sm:px-8 min-h-screen pb-16">
+
+    <!-- Section Header -->
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#DDA74F]/20 text-[#7C5400] text-xs font-label font-bold uppercase tracking-wider mb-2">
+          <span class="w-2 h-2 rounded-full bg-[#DDA74F] animate-ping"></span>
+          Game 2 · Snapshot Elimination
+        </div>
+        <h1 class="font-headline text-3xl sm:text-4xl text-[#1E1B18] font-normal tracking-tight">
+          Camera Hot Potato (Freeze Tag)
+        </h1>
+        <p class="font-body text-sm sm:text-base text-[#6E6761] max-w-xl mt-1">
+          Pass the hot potato and dive out of the lens! When the countdown strikes zero, the camera captures a freeze-frame photo. If the AI detects you in the photo, you are out with photographic evidence!
+        </p>
+      </div>
+
+      <!-- Quick Game Controls -->
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="bg-[#FFFFFF] px-3.5 py-2 rounded-2xl shadow-sm border border-[#E9E1DC] flex items-center gap-2">
+          <span class="text-xs font-label font-bold text-[#6E6761] uppercase">Timer Duration:</span>
+          <select id="timer-duration-select" class="text-xs font-label font-bold text-[#1E1B18] bg-[#F4ECE5] border-none rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-[#E06D53] cursor-pointer">
+            <option value="3.0">3 Seconds (Panic Sprint!)</option>
+            <option value="5.0" selected>5 Seconds (Standard)</option>
+            <option value="7.0">7 Seconds (Large Room)</option>
+            <option value="10.0">10 Seconds (Family Party)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN GAME ARENA -->
+    <div class="bg-[#FFFFFF] rounded-3xl p-4 sm:p-6 shadow-sm border border-[#E9E1DC] relative overflow-hidden mb-8">
+      
+      <!-- Status & Ticking Timer Bar -->
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 mb-4 rounded-2xl bg-[#F4ECE5] border border-[#E9E1DC]">
+        
+        <div class="flex items-center gap-4">
+          <div class="w-14 h-14 rounded-2xl bg-[#1E1B18] text-white flex items-center justify-center shadow-inner">
+            <span class="material-symbols-outlined text-[32px] text-[#E06D53]">photo_camera</span>
+          </div>
+          <div>
+            <div id="game-status-badge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#8A9A86]/15 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-1">
+              Ready to Play
+            </div>
+            <div id="status-text" class="text-base sm:text-lg font-label font-bold text-[#1E1B18]">
+              Choose your timer and click "Start Countdown"!
+            </div>
+          </div>
+        </div>
+
+        <!-- Giant Ticking Countdown Display -->
+        <div class="flex items-center gap-4">
+          <div class="text-center px-5 py-2 rounded-xl bg-[#FFFFFF] border border-[#E9E1DC] min-w-[110px]">
+            <div class="text-[11px] font-label font-bold text-[#6E6761] uppercase">Timer Left</div>
+            <div id="timer-countdown-display" class="text-2xl sm:text-3xl font-label font-black text-[#E06D53] font-mono">5.0s</div>
+          </div>
+
+          <div class="text-center px-4 py-2 rounded-xl bg-[#FFFFFF] border border-[#E9E1DC] min-w-[90px]">
+            <div class="text-[11px] font-label font-bold text-[#6E6761] uppercase">In Frame</div>
+            <div id="players-detected-count" class="text-2xl font-label font-bold text-[#1E1B18]">0</div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2">
+          <button id="start-round-btn" class="px-6 py-3 rounded-full bg-[#E06D53] hover:bg-[#CB5C43] text-white font-label font-bold shadow-sm transition-all flex items-center gap-2 transform active:scale-95" type="button">
+            <span class="material-symbols-outlined text-[20px]">timer</span>
+            <span>Start Countdown</span>
+          </button>
+          <button id="reset-btn" class="px-4 py-3 rounded-full bg-[#FFFFFF] hover:bg-[#F4ECE5] text-[#1E1B18] font-label text-sm font-semibold transition-all border border-[#E9E1DC] flex items-center gap-1.5" type="button" title="Reset Round">
+            <span class="material-symbols-outlined text-[18px]">replay</span>
+            <span class="hidden sm:inline">Reset</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- CAMERA VIEWPORT WITH PHOTO FLASH LAYER -->
+      <div class="relative w-full aspect-[16/9] max-h-[600px] bg-[#EFE8E1] rounded-2xl overflow-hidden flex items-center justify-center border border-[#D8CCC4] select-none" id="arena-viewport">
+        
+        <video id="webcam-video" autoplay playsinline muted class="hidden"></video>
+        <canvas id="game-canvas" class="w-full h-full object-contain block"></canvas>
+
+        <!-- White Camera Shutter Flash Effect Layer -->
+        <div id="camera-flash-layer" class="absolute inset-0 bg-white pointer-events-none opacity-0 transition-opacity duration-150 z-30"></div>
+
+        <!-- Camera Loading Overlay -->
+        <div id="camera-loading-overlay" class="absolute inset-0 bg-[#FAF6F2]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-[#1E1B18] z-30 transition-opacity">
+          <div class="w-16 h-16 rounded-2xl bg-[#FAF0EC] flex items-center justify-center text-[#E06D53] mb-4 border border-[#F2D7CE]">
+            <span class="material-symbols-outlined text-[36px]">videocam</span>
+          </div>
+          <h3 class="text-2xl font-headline font-normal mb-2">Enable Camera to Play Hot Potato</h3>
+          <p class="font-body text-[#6E6761] max-w-md text-sm mb-6">
+            When the timer hits zero, Aqaarib snaps a high-res photo to check if any bodies are caught in the camera frame!
+          </p>
+          <button id="enable-camera-btn" class="px-6 py-3 rounded-full bg-[#E06D53] hover:bg-[#CB5C43] text-white font-label font-bold text-sm flex items-center gap-2 shadow-sm transition-all transform hover:scale-105 active:scale-95">
+            <span class="material-symbols-outlined text-[20px]">videocam</span>
+            <span>Enable Camera</span>
+          </button>
+          <div id="model-status-text" class="font-label text-xs text-[#6E6761] mt-4 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px] animate-spin text-[#DDA74F]">sync</span>
+            Loading AI Vision Detector...
+          </div>
+        </div>
+
+      </div>
+
+      <!-- STATS BAR -->
+      <div class="mt-4 pt-4 border-t border-[#E9E1DC] flex flex-wrap items-center justify-between text-xs font-label text-[#6E6761]">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-[#E06D53] text-[18px]">verified</span>
+          <span>Rounds Played: <strong id="rounds-played-count" class="text-[#1E1B18]">0</strong></span>
+        </div>
+        <div>
+          <span>Tip: When the beeping speeds up, jump out of the frame!</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- VISUAL EVIDENCE & SHOT GALLERY -->
+    <div>
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[#E06D53] text-[22px]">photo_library</span>
+          <h2 class="font-headline text-2xl text-[#1E1B18]">Visual Evidence & Snapshots</h2>
+        </div>
+        <span class="font-label text-xs text-[#6E6761]">Photos taken at the exact instant the timer strikes 0</span>
+      </div>
+
+      <div id="evidence-gallery" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <div class="col-span-full py-10 text-center text-[#6E6761] bg-[#FFFFFF] rounded-2xl border border-dashed border-[#E9E1DC]">
+          <span class="material-symbols-outlined text-[36px] text-[#8A726C] mb-2">image_search</span>
+          <p class="font-label text-sm font-semibold text-[#1E1B18]">No photos taken yet</p>
+          <p class="font-body text-xs text-[#6E6761]">Start a 5-second countdown round. When time runs out, snapshot proof will appear here!</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="hotpotato.js"></script>
+
+  <!-- Kinetic Background Canvas Script -->
+  <script>
+    (function() {
+      const canvas = document.getElementById('bg-kinetic-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let width = 0, height = 0, dpr = 1;
+      const spacing = 22, baseRadius = 0.95, hoverRadius = 1.45, maxProximity = 120;
+      let mouse = { x: -9999, y: -9999, active: false };
+      let ripples = [], particles = [];
+
+      function initParticles() {
+        particles = [];
+        const colors = [{ r: 224, g: 109, b: 83 }, { r: 221, g: 167, b: 79 }, { r: 138, g: 154, b: 134 }];
+        for (let i = 0; i < 24; i++) {
+          particles.push({
+            x: Math.random() * (width || window.innerWidth),
+            y: Math.random() * (height || window.innerHeight),
+            radius: 1.2 + Math.random() * 2.0,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            vx: (Math.random() - 0.5) * 0.16,
+            vy: -0.1 - Math.random() * 0.2,
+            baseAlpha: 0.08 + Math.random() * 0.14,
+            pulseSpeed: 0.008 + Math.random() * 0.012,
+            pulsePhase: Math.random() * Math.PI * 2
+          });
+        }
+      }
+
+      function resizeCanvas() {
+        dpr = window.devicePixelRatio || 1;
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = window.innerWidth * dpr;
+        canvas.height = window.innerHeight * dpr;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (particles.length === 0) initParticles();
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+      initParticles();
+
+      window.addEventListener('pointermove', (e) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (el && (el.closest('button') || el.closest('a') || el.closest('select') || el.closest('#arena-viewport'))) {
+          mouse.active = false;
+        } else {
+          mouse.x = e.clientX;
+          mouse.y = e.clientY;
+          mouse.active = true;
+        }
+      });
+
+      window.addEventListener('pointerleave', () => { mouse.active = false; });
+
+      window.addEventListener('click', (e) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (el && (el.closest('button') || el.closest('a') || el.closest('select') || el.closest('#arena-viewport'))) return;
+        ripples.push({ x: e.clientX, y: e.clientY, radius: 0, maxRadius: 240, opacity: 0.25, speed: 1.8, lineWidth: 1.5, decay: 0.0035, color: 'rgba(224, 109, 83, ' });
+      });
+
+      function draw() {
+        ctx.clearRect(0, 0, width, height);
+        for (let p of particles) {
+          p.x += p.vx; p.y += p.vy; p.pulsePhase += p.pulseSpeed;
+          if (p.x < -10) p.x = width + 10; if (p.x > width + 10) p.x = -10;
+          if (p.y < -10) p.y = height + 10; if (p.y > height + 10) p.y = -10;
+          const alpha = Math.max(0, p.baseAlpha + Math.sin(p.pulsePhase) * 0.05);
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2);
+          grad.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${alpha})`);
+          grad.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+          ctx.fillStyle = grad; ctx.fill();
+        }
+
+        for (let i = ripples.length - 1; i >= 0; i--) {
+          const r = ripples[i]; r.radius += r.speed; r.opacity -= r.decay;
+          if (r.opacity <= 0 || r.radius >= r.maxRadius) { ripples.splice(i, 1); continue; }
+          ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = r.color + Math.max(0, r.opacity) + ')';
+          ctx.lineWidth = r.lineWidth; ctx.stroke();
+        }
+
+        const cols = Math.ceil(width / spacing) + 1;
+        const rows = Math.ceil(height / spacing) + 1;
+        const startX = (width % spacing) / 2;
+        const startY = (height % spacing) / 2;
+
+        for (let c = 0; c < cols; c++) {
+          for (let row = 0; row < rows; row++) {
+            const x = startX + c * spacing;
+            const y = startY + row * spacing;
+            let dist = mouse.active ? Math.hypot(mouse.x - x, mouse.y - y) : 9999;
+            let radius = baseRadius, opacity = 0.07;
+            if (dist < maxProximity) {
+              const factor = 1 - (dist / maxProximity);
+              radius = baseRadius + (hoverRadius - baseRadius) * factor;
+              opacity = 0.07 + 0.18 * factor;
+            }
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(224, 109, 83, ${opacity})`; ctx.fill();
+          }
+        }
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    })();
+  </script>
+
+</body>
+</html>
