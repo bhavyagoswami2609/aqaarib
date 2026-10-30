@@ -119,7 +119,6 @@ class CameraHotPotatoGame {
     this.cameraFlashLayer = document.getElementById('camera-flash-layer');
     this.timerSelect = document.getElementById('timer-duration-select');
     this.timerCountdownDisplay = document.getElementById('timer-countdown-display');
-    this.gameStatusBadge = document.getElementById('game-status-badge');
     this.statusText = document.getElementById('status-text');
     this.playersDetectedCount = document.getElementById('players-detected-count');
     this.roundsPlayedCount = document.getElementById('rounds-played-count');

@@ -594,6 +594,9 @@ class RedLightGreenLightGame {
       p.startForwardY = p.forwardY || p.startComY;
       p.startTorsoSize = p.torsoSize || 100;
       p.eliminatedAt = null;
+      p.violationFrames = 0;
+      p.currentMotion = 0;
+      p.smoothedMotion = 0;
     });
 
     if (this.timerInterval) clearInterval(this.timerInterval);
@@ -643,6 +646,9 @@ class RedLightGreenLightGame {
     if (this.state === GameState.FINISHED) return;
     this.state = GameState.RED;
     this.redTurnStartTime = performance.now();
+    this.players.forEach(p => {
+      p.violationFrames = 0;
+    });
 
     this.updateSignalUI('RED');
     soundEngine.playRedAlarm();
@@ -868,20 +874,54 @@ class RedLightGreenLightGame {
         return;
       }
 
-      let comX = 0, comY = 0, count = 0;
       const keypoints = pose.keypoints;
+      if (!keypoints || keypoints.length === 0) return;
+
+      // 1. Double-Exponential Adaptive Smoothing on all 17 Skeletal Keypoints
+      // Suppresses camera sensor micro-jitter and frame flicker when standing still,
+      // while preserving fluid responsiveness during deliberate movement.
+      if (!player.smoothedKeypoints || player.smoothedKeypoints.length !== keypoints.length) {
+        player.smoothedKeypoints = keypoints.map(kp => ({ x: kp.x, y: kp.y, score: kp.score }));
+      } else {
+        keypoints.forEach((kp, idx) => {
+          let sm = player.smoothedKeypoints[idx];
+          if (!sm) {
+            sm = { x: kp.x, y: kp.y, score: kp.score };
+            player.smoothedKeypoints[idx] = sm;
+          }
+          if (kp.score > 0.2) {
+            const dx = kp.x - sm.x;
+            const dy = kp.y - sm.y;
+            const dist = Math.hypot(dx, dy);
+
+            // Adaptive Alpha:
+            // - Micro-noise (< 3.5px): Heavy smoothing (alpha = 0.16) to freeze raw jitter
+            // - Moderate motion (3.5 - 18px): Smooth tracking (alpha = 0.42)
+            // - Deliberate fast sprint (> 18px): Low latency (alpha = 0.78)
+            const alpha = dist < 3.5 ? 0.16 : (dist < 18 ? 0.42 : 0.78);
+            sm.x += dx * alpha;
+            sm.y += dy * alpha;
+            sm.score = sm.score * 0.7 + kp.score * 0.3;
+          } else {
+            sm.score = kp.score;
+          }
+        });
+      }
+
+      const skps = player.smoothedKeypoints;
+      let comX = 0, comY = 0, count = 0;
       const torsoIdxs = [5, 6, 11, 12];
 
       torsoIdxs.forEach(k => {
-        if (keypoints[k] && keypoints[k].score > 0.25) {
-          comX += keypoints[k].x;
-          comY += keypoints[k].y;
+        if (skps[k] && skps[k].score > 0.25) {
+          comX += skps[k].x;
+          comY += skps[k].y;
           count++;
         }
       });
 
       if (count === 0) {
-        keypoints.forEach(k => {
+        skps.forEach(k => {
           if (k.score > 0.3) {
             comX += k.x;
             comY += k.y;
@@ -894,15 +934,15 @@ class RedLightGreenLightGame {
         const newCom = { x: comX / count, y: comY / count };
 
         // Foremost body point moving toward the finish line (head, shoulders, or center of mass)
-        const headY = keypoints[0] && keypoints[0].score > 0.25 ? keypoints[0].y : newCom.y;
-        const leftShoulderY = keypoints[5] && keypoints[5].score > 0.25 ? keypoints[5].y : headY;
-        const rightShoulderY = keypoints[6] && keypoints[6].score > 0.25 ? keypoints[6].y : headY;
+        const headY = skps[0] && skps[0].score > 0.25 ? skps[0].y : newCom.y;
+        const leftShoulderY = skps[5] && skps[5].score > 0.25 ? skps[5].y : headY;
+        const rightShoulderY = skps[6] && skps[6].score > 0.25 ? skps[6].y : headY;
         const forwardY = Math.min(headY, leftShoulderY, rightShoulderY, newCom.y);
         player.forwardY = forwardY;
 
-        // Measure torso size
-        if (keypoints[5] && keypoints[6] && keypoints[5].score > 0.3 && keypoints[6].score > 0.3) {
-          player.torsoSize = Math.hypot(keypoints[5].x - keypoints[6].x, keypoints[5].y - keypoints[6].y) * 2.8;
+        // Measure torso size from smoothed shoulder coordinates
+        if (skps[5] && skps[6] && skps[5].score > 0.3 && skps[6].score > 0.3) {
+          player.torsoSize = Math.hypot(skps[5].x - skps[6].x, skps[5].y - skps[6].y) * 2.8;
         }
 
         // Initialize starting baseline if in green phase and not recorded yet
@@ -912,37 +952,48 @@ class RedLightGreenLightGame {
           player.startTorsoSize = player.torsoSize;
         }
 
-        // Measure displacement
-        let motionDelta = 0;
+        // 2. Measure displacement with Deadband Noise Gate
+        let comDelta = 0;
         if (player.prevCom) {
           const dX = newCom.x - player.prevCom.x;
           const dY = newCom.y - player.prevCom.y;
-          motionDelta = Math.hypot(dX, dY);
+          const dist = Math.hypot(dX, dY);
+          // Noise deadband: movements under 2.2px are pure camera noise -> zero out
+          comDelta = dist < 2.2 ? 0 : dist;
         }
 
-        // Wrist/ankle limb movements
-        if (player.prevKeypoints) {
-          let limbMotion = 0;
-          let limbCount = 0;
+        // Wrist & Ankle limb movements with Deadband Noise Gate
+        let limbDelta = 0;
+        let limbCount = 0;
+        if (player.prevSmoothedKeypoints) {
           [9, 10, 15, 16].forEach(lk => {
-            if (keypoints[lk] && player.prevKeypoints[lk] && keypoints[lk].score > 0.3) {
-              const ldX = keypoints[lk].x - player.prevKeypoints[lk].x;
-              const ldY = keypoints[lk].y - player.prevKeypoints[lk].y;
-              limbMotion += Math.hypot(ldX, ldY);
+            const curKp = skps[lk];
+            const prevKp = player.prevSmoothedKeypoints[lk];
+            if (curKp && prevKp && curKp.score > 0.3) {
+              const ldX = curKp.x - prevKp.x;
+              const ldY = curKp.y - prevKp.y;
+              const lDist = Math.hypot(ldX, ldY);
+              // Ignore wrist/ankle micro-tremor under 2.8px
+              const effectiveLimb = lDist < 2.8 ? 0 : lDist;
+              limbDelta += effectiveLimb;
               limbCount++;
             }
           });
-          if (limbCount > 0) {
-            motionDelta = Math.max(motionDelta, (limbMotion / limbCount) * 1.2);
-          }
         }
 
-        player.prevCom = newCom;
-        player.com = newCom;
-        player.prevKeypoints = keypoints.map(kp => ({ x: kp.x, y: kp.y }));
+        let combinedMotion = comDelta;
+        if (limbCount > 0) {
+          const avgLimb = limbDelta / limbCount;
+          combinedMotion = Math.max(combinedMotion, avgLimb * 1.15);
+        }
 
-        player.currentMotion = motionDelta;
-        player.smoothedMotion = player.smoothedMotion * 0.7 + motionDelta * 0.3;
+        player.prevCom = { ...newCom };
+        player.com = newCom;
+        player.prevSmoothedKeypoints = skps.map(kp => ({ x: kp.x, y: kp.y, score: kp.score }));
+
+        // 3. Motion metric smoothing: low-pass filter to reject single-frame spikes
+        player.currentMotion = combinedMotion;
+        player.smoothedMotion = (player.smoothedMotion || 0) * 0.72 + combinedMotion * 0.28;
 
         // Progress Calculation towards the translucent dotted finish line
         if (player.status === 'active' && this.state === GameState.GREEN) {
@@ -1084,12 +1135,12 @@ class RedLightGreenLightGame {
       }
 
       const isWinner = player.status === 'winner';
-      const isMovingAlert = this.state === GameState.RED && player.currentMotion > this.motionThreshold;
+      const isMovingAlert = this.state === GameState.RED && ((player.violationFrames && player.violationFrames > 0) || player.smoothedMotion > this.motionThreshold);
       const baseColor = isWinner ? '#DDA74F' : player.color;
 
-      // Skeletons
+      // Skeletons: render stabilized smoothed coordinates to eliminate video jitter
       if (showSkeleton) {
-        const keypoints = player.pose.keypoints;
+        const keypoints = player.smoothedKeypoints || player.pose.keypoints;
 
         POSE_CONNECTIONS.forEach(([i, j]) => {
           const kp1 = keypoints[i];
@@ -1171,15 +1222,30 @@ class RedLightGreenLightGame {
       if (timeSinceRed > this.gracePeriodMs) {
         this.players.forEach(player => {
           if (player.status === 'active') {
-            if (player.currentMotion > this.motionThreshold) {
-              player.status = 'eliminated';
-              player.eliminatedAt = now;
-              soundEngine.playEliminationBuzzer();
-              soundEngine.speak(`${player.name} eliminated!`);
+            // Require sustained movement across at least 3 consecutive frames (~100ms)
+            // or high smoothed motion to eliminate, preventing 1-frame camera noise eliminations
+            const motionExceeded = (player.smoothedMotion > this.motionThreshold) ||
+                                   (player.currentMotion > (this.motionThreshold * 1.35));
+
+            if (motionExceeded) {
+              player.violationFrames = (player.violationFrames || 0) + 1;
+              if (player.violationFrames >= 3) {
+                player.status = 'eliminated';
+                player.eliminatedAt = now;
+                soundEngine.playEliminationBuzzer();
+                soundEngine.speak(`${player.name} eliminated!`);
+              }
+            } else {
+              player.violationFrames = Math.max(0, (player.violationFrames || 0) - 1);
             }
           }
         });
       }
+    } else {
+      // Clear violation counters when light is Green or Warning
+      this.players.forEach(player => {
+        player.violationFrames = 0;
+      });
     }
 
     // 2. Winner Check: Crossing Finish Line!
@@ -1237,8 +1303,9 @@ class RedLightGreenLightGame {
         statusBadge = `<span class="px-2 py-0.5 rounded-full bg-[#DDA74F]/25 text-[#7C5400] text-[11px] font-label font-bold">🏆 Winner</span>`;
       }
 
-      const motionPct = Math.min(100, Math.round((p.currentMotion / (this.motionThreshold * 1.5)) * 100));
-      const isRedAlert = this.state === GameState.RED && p.currentMotion > this.motionThreshold;
+      const displayMotion = p.smoothedMotion || p.currentMotion || 0;
+      const motionPct = Math.min(100, Math.round((displayMotion / (this.motionThreshold * 1.5)) * 100));
+      const isRedAlert = this.state === GameState.RED && ((p.violationFrames && p.violationFrames > 0) || p.smoothedMotion > this.motionThreshold);
 
       html += `
         <div class="bg-[#F4ECE5] p-4 rounded-2xl border ${isRedAlert ? 'border-[#E06D53] shadow-sm' : 'border-[#E9E1DC]'} flex flex-col justify-between">
