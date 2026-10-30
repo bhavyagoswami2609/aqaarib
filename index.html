@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html class="overflow-x-hidden" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Aqaarib | Where fun meets family</title>
+
+  <!-- Google Fonts: Newsreader (Headline), Hanken Grotesk (Body), Plus Jakarta Sans (Label & UI) -->
+  <link href="https://fonts.googleapis.com" rel="preconnect"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..800;1,300..800&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#FAF6F2",
+            "surface-low": "#F4ECE5",
+            "surface-card": "#FFFFFF",
+            "on-surface": "#1E1B18",
+            "on-surface-muted": "#6E6761",
+            "primary": "#E06D53",
+            "primary-hover": "#CB5C43",
+            "secondary": "#8A9A86",
+            "tertiary": "#DDA74F",
+            "neutral-dark": "#1E1B18",
+            "border-subtle": "#E9E1DC",
+            "border-medium": "#D8CCC4"
+          },
+          fontFamily: {
+            "headline": ["Newsreader", "serif"],
+            "body": ["Hanken Grotesk", "sans-serif"],
+            "label": ["Plus Jakarta Sans", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- TensorFlow.js and Pose Detection (100% Free, runs client-side in browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@latest/dist/pose-detection.min.js"></script>
+  <!-- Confetti for Celebrations -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-width: 100vw;
+        overflow-x: hidden;
+        background-color: #FAF6F2;
+        scroll-behavior: smooth;
+        font-family: 'Hanken Grotesk', sans-serif;
+        color: #1E1B18;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #D8CCC4;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    /* Glow pulse animations */
+    @keyframes pulse-signal-green {
+      0%, 100% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.6); transform: scale(1); }
+      50% { box-shadow: 0 0 30px rgba(16, 185, 129, 0.9); transform: scale(1.05); }
+    }
+    @keyframes pulse-signal-red {
+      0%, 100% { box-shadow: 0 0 15px rgba(224, 109, 83, 0.7); transform: scale(1); }
+      50% { box-shadow: 0 0 32px rgba(224, 109, 83, 1); transform: scale(1.05); }
+    }
+    .signal-active-green {
+      animation: pulse-signal-green 1.2s infinite ease-in-out;
+    }
+    .signal-active-red {
+      animation: pulse-signal-red 0.75s infinite ease-in-out;
+    }
+
+    /* Clean countdown pop animation */
+    .countdown-pop {
+      transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+    }
+  </style>
+</head>
+
+<body class="bg-[#FAF6F2] font-body text-[#1E1B18] antialiased relative overflow-x-hidden min-h-screen w-full min-w-full">
+
+  <!-- Clean, translucent kinetic background dot grid from the template (No gradient blobs) -->
+  <canvas class="fixed inset-0 pointer-events-none z-0 w-screen min-w-full h-full overflow-hidden opacity-90" id="bg-kinetic-canvas"></canvas>
+
+  <!-- Sticky Floating Header -->
+  <header class="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+    <div class="pointer-events-auto h-16 max-w-5xl w-full mx-auto px-4 sm:px-6 bg-[#FFFFFF]/95 backdrop-blur-md rounded-full shadow-sm flex items-center justify-between gap-2 sm:gap-4 transition-all duration-300 border border-[#E9E1DC]">
+      
+      <!-- Brand Logo -->
+      <a href="#hero-section" class="flex items-center gap-3 shrink-0 group">
+        <div class="w-10 h-10 rounded-full bg-[#FAF0EC] flex items-center justify-center text-[#E06D53] group-hover:scale-105 transition-transform">
+          <span class="material-symbols-outlined text-[24px]">sports_esports</span>
+        </div>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="font-headline text-xl text-[#1E1B18] tracking-tight font-medium">Aqaarib</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-[#E06D53]/10 text-[#E06D53] font-label font-semibold">أقارب</span>
+          </div>
+          <span class="text-[11px] font-label text-[#6E6761] -mt-1 hidden sm:block">Where fun meets family</span>
+        </div>
+      </a>
+
+      <!-- Navigation Pills -->
+      <nav class="flex items-center p-1 bg-[#F4ECE5] rounded-full gap-1">
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-medium text-[#1E1B18] hover:bg-[#FFFFFF] transition-all flex items-center gap-1.5" href="#hero-section">
+          <span class="material-symbols-outlined text-[16px]">home</span>
+          <span>Home</span>
+        </a>
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-semibold bg-[#E06D53] text-white shadow-sm hover:bg-[#CB5C43] transition-all flex items-center gap-1.5" href="#game-section">
+          <span class="material-symbols-outlined text-[16px]">traffic</span>
+          <span>Red Light Green Light</span>
+        </a>
+        <a class="px-3.5 py-1.5 rounded-full font-label text-xs sm:text-sm font-medium text-[#6E6761] hover:text-[#1E1B18] hover:bg-[#FFFFFF] transition-all hidden md:flex items-center gap-1.5" href="#rules-section">
+          <span class="material-symbols-outlined text-[16px]">help_outline</span>
+          <span>Rules</span>
+        </a>
+      </nav>
+
+      <!-- Action Toggles -->
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Voice Announcement Toggle -->
+        <button id="toggle-voice-btn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F4ECE5] text-[#1E1B18] hover:bg-[#FFFFFF] transition-all text-xs font-label" title="Toggle Voice Announcer" type="button">
+          <span class="material-symbols-outlined text-[18px] text-[#E06D53]" id="voice-icon">volume_up</span>
+          <span class="hidden lg:inline font-semibold" id="voice-text">Voice On</span>
+        </button>
+
+        <!-- Live Status Pill -->
+        <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#8A9A86]/15 text-[#3A4E37] font-label text-xs">
+          <span class="w-2 h-2 rounded-full bg-[#8A9A86] animate-pulse" id="camera-status-dot"></span>
+          <span id="camera-status-text" class="font-medium">Camera Ready</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="relative z-10 w-full pt-20 bg-transparent max-w-[1280px] mx-auto px-4 sm:px-8 min-h-screen pb-16">
+
+    <!-- HERO SECTION -->
+    <section id="hero-section" class="relative w-full min-h-[75vh] flex flex-col justify-center overflow-hidden py-10">
+      
+      <!-- Live Presence Header Banner -->
+      <div class="relative z-10 flex flex-wrap items-center justify-between gap-3 px-2 pt-1 pb-4">
+        <div class="flex items-center gap-2.5 bg-[#FFFFFF] px-4 py-2 rounded-full shadow-sm border border-[#E9E1DC]">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8A9A86] opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-[#8A9A86]"></span>
+          </span>
+          <span class="font-label text-xs font-semibold text-[#1E1B18]">Multiplayer Family Arena</span>
+          <span class="text-[#D8CCC4] text-xs">•</span>
+          <span class="font-label text-xs text-[#6E6761] flex items-center gap-1">
+            <span class="material-symbols-outlined text-[15px] text-[#DDA74F]">groups</span>
+            Tracks 2–4 Players Simultaneously
+          </span>
+        </div>
+
+        <!-- Location Badge -->
+        <div class="flex items-center gap-2 bg-[#FFFFFF] px-3.5 py-1.5 rounded-full shadow-sm border border-[#E9E1DC]">
+          <span class="material-symbols-outlined text-[16px] text-[#E06D53]">location_on</span>
+          <span class="font-label text-xs text-[#6E6761] font-semibold">ADU Hackathon 2k26 • Abu Dhabi</span>
+        </div>
+      </div>
+
+      <!-- Hero Pitch Content -->
+      <div class="relative z-10 flex flex-col items-center text-center my-auto px-4 max-w-4xl mx-auto py-8">
+        
+        <!-- Overline Tag -->
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FAF0EC] text-[#E06D53] mb-6 border border-[#F2D7CE]">
+          <span class="material-symbols-outlined text-[16px]">videocam</span>
+          <span class="font-label text-xs uppercase tracking-widest font-bold">100% Free AI Vision Game</span>
+          <span class="text-[#D8CCC4]">•</span>
+          <span class="font-label text-xs font-semibold">Living Room Arena</span>
+        </div>
+
+        <!-- Headline in Newsreader with Tagline -->
+        <h1 class="font-headline text-[44px] leading-[50px] sm:text-[60px] sm:leading-[66px] text-[#1E1B18] font-normal tracking-tight max-w-3xl mb-4">
+          Aqaarib: <span class="italic font-headline text-[#E06D53] underline decoration-[#E06D53]/30 decoration-wavy decoration-1 underline-offset-8">where fun meets family.</span>
+        </h1>
+
+        <!-- Sub-headline -->
+        <p class="font-body text-lg text-[#6E6761] max-w-2xl mx-auto leading-relaxed mb-8">
+          Gather the family in front of your camera. Our client-side AI skeleton tracker monitors bodies and center-of-mass in real time. Sprint on <strong class="text-[#2F6F3A]">Green Light</strong>, freeze like stone on <strong class="text-[#B93E28]">Red Light</strong>, and cross the translucent finish line to win!
+        </p>
+
+        <!-- CTA Buttons -->
+        <div class="flex flex-wrap items-center justify-center gap-4 mb-8">
+          <a class="group inline-flex items-center gap-3 px-8 py-4 rounded-full bg-[#E06D53] text-white font-label text-base font-bold shadow-md hover:bg-[#CB5C43] transition-all duration-200 transform hover:-translate-y-0.5" href="#game-section">
+            <span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">play_circle</span>
+            <span>Step into the Arena</span>
+            <span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
+          </a>
+
+          <a class="inline-flex items-center gap-2 px-6 py-4 rounded-full bg-[#FFFFFF] text-[#1E1B18] font-label text-sm font-semibold shadow-sm hover:bg-[#F4ECE5] transition-all duration-200 border border-[#E9E1DC]" href="#rules-section">
+            <span class="material-symbols-outlined text-[18px] text-[#DDA74F]">menu_book</span>
+            <span>How to Play</span>
+          </a>
+        </div>
+
+        <!-- Feature Pills -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left">
+          <div class="bg-[#FFFFFF] p-3.5 rounded-2xl border border-[#E9E1DC] shadow-sm flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#8A9A86]/20 text-[#3A4E37] flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[22px]">accessibility_new</span>
+            </div>
+            <div>
+              <div class="font-label text-sm font-bold text-[#1E1B18]">17-Joint Skeletons</div>
+              <div class="font-body text-xs text-[#6E6761]">Precise center-of-mass tracking</div>
+            </div>
+          </div>
+
+          <div class="bg-[#FFFFFF] p-3.5 rounded-2xl border border-[#E9E1DC] shadow-sm flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#DDA74F]/20 text-[#7C5400] flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[22px]">record_voice_over</span>
+            </div>
+            <div>
+              <div class="font-label text-sm font-bold text-[#1E1B18]">Speaker Voice</div>
+              <div class="font-body text-xs text-[#6E6761]">Audio calls & buzzer effects</div>
+            </div>
+          </div>
+
+          <div class="bg-[#FFFFFF] p-3.5 rounded-2xl border border-[#E9E1DC] shadow-sm flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#FAF0EC] text-[#E06D53] flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[22px]">flag</span>
+            </div>
+            <div>
+              <div class="font-label text-sm font-bold text-[#1E1B18]">Adjustable Line</div>
+              <div class="font-body text-xs text-[#6E6761]">Drag or slide finish position</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- GAME ARENA SECTION -->
+    <section id="game-section" class="relative z-20 w-full pt-10 pb-16">
+      
+      <!-- Section Header -->
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#8A9A86]/15 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-2">
+            <span class="w-2 h-2 rounded-full bg-[#8A9A86] animate-ping"></span>
+            Game 1 · Live Camera Arena
+          </div>
+          <h2 class="font-headline text-3xl sm:text-4xl text-[#1E1B18] font-normal tracking-tight">
+            Red Light, Green Light
+          </h2>
+          <p class="font-body text-sm sm:text-base text-[#6E6761] max-w-xl mt-1">
+            Stand back in front of your camera. On <strong class="text-[#2F6F3A]">Green Light</strong>, sprint toward the dotted finish line! On <strong class="text-[#B93E28]">Red Light</strong>, freeze completely. If you move, you're out!
+          </p>
+        </div>
+
+        <!-- Quick Game Controls & Presets -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="bg-[#FFFFFF] px-3.5 py-2 rounded-2xl shadow-sm border border-[#E9E1DC] flex items-center gap-2">
+            <span class="text-xs font-label font-bold text-[#6E6761] uppercase">Difficulty:</span>
+            <select id="difficulty-select" class="text-xs font-label font-bold text-[#1E1B18] bg-[#F4ECE5] border-none rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-[#E06D53] cursor-pointer">
+              <option value="easy">Casual (Forgiving)</option>
+              <option value="normal" selected>Family Standard</option>
+              <option value="hard">Ninja Freeze (Strict)</option>
+            </select>
+          </div>
+
+          <div class="bg-[#FFFFFF] px-3.5 py-2 rounded-2xl shadow-sm border border-[#E9E1DC] flex items-center gap-2">
+            <span class="text-xs font-label font-bold text-[#6E6761] uppercase">Finish Line:</span>
+            <input type="range" id="finish-line-slider" min="15" max="80" value="35" class="w-24 accent-[#E06D53] cursor-pointer" title="Adjust finish line position"/>
+            <span id="finish-line-pct" class="text-xs font-label font-bold text-[#1E1B18]">35%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN ARENA BOARD (No harsh black borders, soft clean warm surfaces) -->
+      <div class="bg-[#FFFFFF] rounded-3xl p-4 sm:p-6 shadow-sm border border-[#E9E1DC] relative overflow-hidden">
+        
+        <!-- Traffic Signal / Command Status Bar (Matching reference style) -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 mb-4 rounded-2xl bg-[#F4ECE5] border border-[#E9E1DC]">
+          
+          <!-- Signal Beacon Indicator -->
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 p-2 rounded-2xl bg-[#1E1B18] shadow-inner">
+              <!-- Red Light -->
+              <div id="signal-bulb-red" class="w-10 h-10 rounded-full bg-[#331814] flex items-center justify-center transition-all duration-300">
+                <span class="material-symbols-outlined text-white text-[20px] opacity-25">pan_tool</span>
+              </div>
+              <!-- Yellow / Warning Light -->
+              <div id="signal-bulb-yellow" class="w-10 h-10 rounded-full bg-[#302410] flex items-center justify-center transition-all duration-300">
+                <span class="material-symbols-outlined text-white text-[20px] opacity-25">hourglass_top</span>
+              </div>
+              <!-- Green Light -->
+              <div id="signal-bulb-green" class="w-10 h-10 rounded-full bg-[#122A16] flex items-center justify-center transition-all duration-300">
+                <span class="material-symbols-outlined text-white text-[20px] opacity-25">directions_run</span>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-[11px] font-label font-bold text-[#8A726C] uppercase tracking-wider">Current Command</div>
+              <div id="signal-status-label" class="text-2xl font-label font-black text-[#1E1B18] tracking-tight uppercase transition-colors">
+                Waiting to Start
+              </div>
+            </div>
+          </div>
+
+          <!-- Round Timer & Survivors Counters -->
+          <div class="flex items-center gap-4">
+            <div class="text-center px-4 py-2 rounded-xl bg-[#FFFFFF] border border-[#E9E1DC] min-w-[90px]">
+              <div class="text-[11px] font-label font-bold text-[#6E6761] uppercase">Survivors</div>
+              <div id="survivors-count" class="text-xl font-label font-bold text-[#8A9A86]">0 / 0</div>
+            </div>
+            <div class="text-center px-4 py-2 rounded-xl bg-[#FFFFFF] border border-[#E9E1DC] min-w-[90px]">
+              <div class="text-[11px] font-label font-bold text-[#6E6761] uppercase">Time Left</div>
+              <div id="round-timer" class="text-xl font-label font-bold text-[#E06D53] font-mono">00:00</div>
+            </div>
+          </div>
+
+          <!-- Primary Game Action Buttons -->
+          <div class="flex items-center gap-2">
+            <button id="start-game-btn" class="px-6 py-3 rounded-full bg-[#E06D53] hover:bg-[#CB5C43] text-white font-label font-bold shadow-sm transition-all flex items-center gap-2 transform active:scale-95" type="button">
+              <span class="material-symbols-outlined text-[20px]">play_arrow</span>
+              <span>Start Round</span>
+            </button>
+            <button id="reset-game-btn" class="px-4 py-3 rounded-full bg-[#FFFFFF] hover:bg-[#F4ECE5] text-[#1E1B18] font-label text-sm font-semibold transition-all border border-[#E9E1DC] flex items-center gap-1.5" type="button" title="Reset Game">
+              <span class="material-symbols-outlined text-[18px]">replay</span>
+              <span class="hidden sm:inline">Reset</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CAMERA VIEWPORT (Subtle warm border, clean aspect ratio, dynamic camera color tint) -->
+        <div class="relative w-full aspect-[16/9] max-h-[640px] bg-[#EFE8E1] rounded-2xl overflow-hidden flex items-center justify-center border border-[#D8CCC4] cursor-crosshair select-none" id="arena-viewport">
+          
+          <!-- Hidden Raw Video Element (Source for Canvas) -->
+          <video id="webcam-video" autoplay playsinline muted class="hidden"></video>
+
+          <!-- Main Interactive Game Canvas -->
+          <canvas id="game-canvas" class="w-full h-full object-contain block"></canvas>
+
+          <!-- Dynamic Camera Slide Tint Layer (Green tint on green light, Red tint on red light) -->
+          <div id="camera-tint-layer" class="absolute inset-0 pointer-events-none transition-colors duration-400 ease-in-out"></div>
+
+          <!-- Drag Hint Pill for Translucent Dotted Finish Line -->
+          <div id="finish-line-pill" class="absolute z-20 pointer-events-none flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1E1B18]/75 text-white font-label text-xs font-semibold shadow-sm transition-all">
+            <span class="material-symbols-outlined text-[15px] text-[#DDA74F]">sports_score</span>
+            <span>Finish Line (Drag up/down)</span>
+          </div>
+
+          <!-- Camera Loading / Permission Placeholder -->
+          <div id="camera-loading-overlay" class="absolute inset-0 bg-[#FAF6F2]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-[#1E1B18] z-30 transition-opacity">
+            <div class="w-16 h-16 rounded-2xl bg-[#FAF0EC] flex items-center justify-center text-[#E06D53] mb-4 border border-[#F2D7CE]">
+              <span class="material-symbols-outlined text-[36px]">videocam</span>
+            </div>
+            <h3 class="text-2xl font-headline font-normal mb-2">Enable Camera to Begin</h3>
+            <p class="font-body text-[#6E6761] max-w-md text-sm mb-6">
+              Aqaarib tracks your body and center-of-mass client-side in real time. Your video stays entirely on your computer.
+            </p>
+            <button id="enable-camera-btn" class="px-6 py-3 rounded-full bg-[#E06D53] hover:bg-[#CB5C43] text-white font-label font-bold text-sm flex items-center gap-2 shadow-sm transition-all transform hover:scale-105 active:scale-95">
+              <span class="material-symbols-outlined text-[20px]">videocam</span>
+              <span>Enable Camera</span>
+            </button>
+            <div id="model-status-text" class="font-label text-xs text-[#6E6761] mt-4 flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px] animate-spin text-[#DDA74F]">sync</span>
+              Loading AI Skeleton Model...
+            </div>
+          </div>
+
+          <!-- Clean, Bug-Free Countdown Overlay (3, 2, 1, GO!) -->
+          <div id="countdown-overlay" class="absolute inset-0 bg-[#FAF6F2]/75 backdrop-blur-sm flex items-center justify-center z-40 hidden">
+            <div id="countdown-number" class="text-8xl sm:text-9xl font-label font-black text-[#E06D53] countdown-pop drop-shadow-sm select-none">
+              3
+            </div>
+          </div>
+
+          <!-- Winner Celebration Banner Overlay -->
+          <div id="winner-overlay" class="absolute inset-0 bg-[#FAF6F2]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-[#1E1B18] z-40 hidden transition-all">
+            <div class="w-20 h-20 rounded-full bg-[#DDA74F]/20 text-[#7C5400] flex items-center justify-center mb-4 border border-[#DDA74F]">
+              <span class="material-symbols-outlined text-[48px]">emoji_events</span>
+            </div>
+            <h2 class="text-4xl sm:text-5xl font-headline font-normal text-[#1E1B18] mb-2" id="winner-title">
+              Victory Claimed!
+            </h2>
+            <p class="font-body text-base text-[#6E6761] mb-6 max-w-md" id="winner-subtitle">
+              You conquered the red light and crossed the finish line!
+            </p>
+            <button id="play-again-btn" class="px-8 py-3.5 rounded-full bg-[#E06D53] hover:bg-[#CB5C43] text-white font-label font-bold text-base shadow-md transition-all transform hover:scale-105">
+              Play Next Round
+            </button>
+          </div>
+
+        </div>
+
+        <!-- TRACKED PLAYERS LIVE ROSTER & FINISH PROGRESS -->
+        <div class="mt-6">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-[#E06D53] text-[20px]">people</span>
+              <h3 class="font-label text-base font-bold text-[#1E1B18]">Tracked Family Members</h3>
+            </div>
+            <span class="font-label text-xs text-[#6E6761]">Automatic multi-person lane assignment</span>
+          </div>
+
+          <!-- Player Cards Container -->
+          <div id="players-roster" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div class="col-span-full py-8 text-center text-[#6E6761] bg-[#F4ECE5] rounded-2xl border border-[#E9E1DC]">
+              <span class="material-symbols-outlined text-[32px] text-[#8A726C] mb-1">person_search</span>
+              <p class="font-label text-sm font-semibold text-[#1E1B18]">Step in front of the camera</p>
+              <p class="font-body text-xs text-[#6E6761]">Up to 4 players will be detected as Player 1, Player 2, etc.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera & Sensitivity Tuning Bar -->
+        <div class="mt-6 pt-4 border-t border-[#E9E1DC] flex flex-wrap items-center justify-between gap-4 text-xs font-label text-[#6E6761]">
+          <div class="flex items-center gap-4 flex-wrap">
+            <!-- Mirror Video Toggle (Defaults to UNMIRRORED standard) -->
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="mirror-camera-checkbox" class="rounded text-[#E06D53] focus:ring-[#E06D53] w-4 h-4"/>
+              <span class="font-semibold text-[#1E1B18]">Mirror Camera View</span>
+            </label>
+
+            <!-- Show Skeleton Mesh Toggle -->
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="show-skeleton-checkbox" checked class="rounded text-[#E06D53] focus:ring-[#E06D53] w-4 h-4"/>
+              <span class="font-semibold text-[#1E1B18]">Show Skeleton Bones</span>
+            </label>
+
+            <!-- Center of Mass Reticle -->
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="show-com-checkbox" checked class="rounded text-[#E06D53] focus:ring-[#E06D53] w-4 h-4"/>
+              <span class="font-semibold text-[#1E1B18]">Show Center-of-Mass Reticle</span>
+            </label>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-[#6E6761] font-medium">Motion Sensitivity:</span>
+            <input type="range" id="sensitivity-slider" min="1" max="10" value="5" class="w-24 accent-[#E06D53] cursor-pointer"/>
+            <span id="sensitivity-value" class="font-bold text-[#1E1B18]">5</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- RULES & HOW TO PLAY SECTION -->
+    <section id="rules-section" class="relative z-20 w-full py-12 border-t border-[#E9E1DC]">
+      <div class="max-w-4xl mx-auto">
+        <div class="text-center mb-8">
+          <span class="text-xs font-label font-bold uppercase tracking-widest text-[#E06D53]">Family Playbook</span>
+          <h2 class="font-headline text-3xl sm:text-4xl text-[#1E1B18] font-normal mt-1">How to Play Aqaarib</h2>
+          <p class="font-body text-[#6E6761] text-sm mt-1">Simple rules, heart-racing family fun for kids, parents, and friends.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-[#FFFFFF] p-6 rounded-2xl border border-[#E9E1DC] shadow-sm flex flex-col justify-between">
+            <div>
+              <div class="w-10 h-10 rounded-2xl bg-[#8A9A86]/20 text-[#3A4E37] flex items-center justify-center font-label font-bold text-lg mb-4">
+                1
+              </div>
+              <h3 class="font-label text-base font-bold text-[#1E1B18] mb-2">Sprint on Green</h3>
+              <p class="font-body text-sm text-[#6E6761] leading-relaxed">
+                When the camera glows <strong class="text-[#2F6F3A]">Green</strong>, sprint forward toward the dotted finish line to increase your progress.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#E9E1DC] text-xs font-label text-[#8A9A86] font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">check_circle</span>
+              Motion is free and encouraged
+            </div>
+          </div>
+
+          <div class="bg-[#FFFFFF] p-6 rounded-2xl border border-[#E9E1DC] shadow-sm flex flex-col justify-between">
+            <div>
+              <div class="w-10 h-10 rounded-2xl bg-[#FAF0EC] text-[#E06D53] flex items-center justify-center font-label font-bold text-lg mb-4">
+                2
+              </div>
+              <h3 class="font-label text-base font-bold text-[#1E1B18] mb-2">Freeze on Red!</h3>
+              <p class="font-body text-sm text-[#6E6761] leading-relaxed">
+                When the camera glows <strong class="text-[#B93E28]">Red</strong>, freeze instantly! Even a small twitch or sway of your center-of-mass will trigger elimination.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#E9E1DC] text-xs font-label text-[#B93E28] font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">warning</span>
+              Moving causes immediate elimination
+            </div>
+          </div>
+
+          <div class="bg-[#FFFFFF] p-6 rounded-2xl border border-[#E9E1DC] shadow-sm flex flex-col justify-between">
+            <div>
+              <div class="w-10 h-10 rounded-2xl bg-[#DDA74F]/20 text-[#7C5400] flex items-center justify-center font-label font-bold text-lg mb-4">
+                3
+              </div>
+              <h3 class="font-label text-base font-bold text-[#1E1B18] mb-2">Cross the Line to Win</h3>
+              <p class="font-body text-sm text-[#6E6761] leading-relaxed">
+                Be the first survivor to cross the translucent dotted finish line. When your body passes it, you're crowned the round champion!
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#E9E1DC] text-xs font-label text-[#E06D53] font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">emoji_events</span>
+              Victory fanfare & celebration
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- App Script -->
+  <script src="app.js"></script>
+
+  <!-- Clean Kinetic Background Canvas Script (Adapted directly from Kinship template) -->
+  <script>
+    (function() {
+      const canvas = document.getElementById('bg-kinetic-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      const spacing = 22;
+      const baseRadius = 0.95;
+      const hoverRadius = 1.45;
+      const maxProximity = 120;
+      
+      let mouse = { x: -9999, y: -9999, active: false };
+      let ripples = [];
+      let particles = [];
+      const PARTICLE_COUNT = 24;
+
+      function isOverUI(x, y) {
+        if (x < 0 || y < 0 || x > width || y > height) return true;
+        const el = document.elementFromPoint(x, y);
+        if (!el) return false;
+        return !!(el.closest('button') || el.closest('a') || el.closest('input') || el.closest('select') || el.closest('#arena-viewport'));
+      }
+
+      function initParticles() {
+        particles = [];
+        const colors = [
+          { r: 224, g: 109, b: 83 },
+          { r: 221, g: 167, b: 79 },
+          { r: 138, g: 154, b: 134 }
+        ];
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          particles.push({
+            x: Math.random() * (width || window.innerWidth),
+            y: Math.random() * (height || window.innerHeight),
+            radius: 1.2 + Math.random() * 2.0,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            vx: (Math.random() - 0.5) * 0.16,
+            vy: -0.1 - Math.random() * 0.2,
+            baseAlpha: 0.08 + Math.random() * 0.14,
+            pulseSpeed: 0.008 + Math.random() * 0.012,
+            pulsePhase: Math.random() * Math.PI * 2
+          });
+        }
+      }
+
+      function resizeCanvas() {
+        dpr = window.devicePixelRatio || 1;
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = window.innerWidth * dpr;
+        canvas.height = window.innerHeight * dpr;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (particles.length === 0) initParticles();
+      }
+      
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+      initParticles();
+      
+      window.addEventListener('pointermove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const curX = e.clientX - rect.left;
+        const curY = e.clientY - rect.top;
+        if (isOverUI(e.clientX, e.clientY)) {
+          mouse.active = false;
+          mouse.x = -9999;
+          mouse.y = -9999;
+        } else {
+          mouse.x = curX;
+          mouse.y = curY;
+          mouse.active = true;
+        }
+      });
+      
+      window.addEventListener('pointerleave', () => {
+        mouse.active = false;
+        mouse.x = -9999;
+        mouse.y = -9999;
+      });
+      
+      window.addEventListener('click', (e) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (el && (el.closest('button') || el.closest('a') || el.closest('input') || el.closest('select') || el.closest('#arena-viewport'))) {
+          return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        ripples.push({
+          x: clickX,
+          y: clickY,
+          radius: 0,
+          maxRadius: 240,
+          opacity: 0.25,
+          speed: 1.8,
+          lineWidth: 1.5,
+          decay: 0.0035,
+          color: 'rgba(224, 109, 83, '
+        });
+        ripples.push({
+          x: clickX,
+          y: clickY,
+          radius: 0,
+          maxRadius: 160,
+          opacity: 0.18,
+          speed: 1.25,
+          lineWidth: 1.0,
+          decay: 0.003,
+          color: 'rgba(221, 167, 79, '
+        });
+      });
+
+      function draw() {
+        ctx.clearRect(0, 0, width, height);
+
+        // 1. Ambient floating particles
+        for (let p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.pulsePhase += p.pulseSpeed;
+
+          if (p.x < -10) p.x = width + 10;
+          if (p.x > width + 10) p.x = -10;
+          if (p.y < -10) p.y = height + 10;
+          if (p.y > height + 10) p.y = -10;
+
+          const alpha = Math.max(0, p.baseAlpha + Math.sin(p.pulsePhase) * 0.05);
+
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2);
+          grad.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${alpha})`);
+          grad.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        }
+        
+        // 2. Concentric ripples on click
+        for (let i = ripples.length - 1; i >= 0; i--) {
+          const r = ripples[i];
+          r.radius += r.speed;
+          r.opacity -= r.decay;
+          
+          if (r.opacity <= 0 || r.radius >= r.maxRadius) {
+            ripples.splice(i, 1);
+            continue;
+          }
+          
+          ctx.beginPath();
+          ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = r.color + Math.max(0, r.opacity) + ')';
+          ctx.lineWidth = r.lineWidth;
+          ctx.stroke();
+        }
+        
+        // 3. Delicate dot grid matrix
+        const cols = Math.ceil(width / spacing) + 1;
+        const rows = Math.ceil(height / spacing) + 1;
+        const startX = (width % spacing) / 2;
+        const startY = (height % spacing) / 2;
+        
+        for (let c = 0; c < cols; c++) {
+          for (let row = 0; row < rows; row++) {
+            const x = startX + c * spacing;
+            const y = startY + row * spacing;
+            
+            let distToMouse = 9999;
+            if (mouse.active) {
+              const dx = mouse.x - x;
+              const dy = mouse.y - y;
+              distToMouse = Math.hypot(dx, dy);
+            }
+            
+            let rippleBonus = 0;
+            for (let j = 0; j < ripples.length; j++) {
+              const rip = ripples[j];
+              const dR = Math.hypot(rip.x - x, rip.y - y);
+              const diff = Math.abs(dR - rip.radius);
+              if (diff < 26) {
+                rippleBonus = Math.max(rippleBonus, (1 - diff / 26) * rip.opacity);
+              }
+            }
+            
+            let radius = baseRadius;
+            let opacity = 0.07;
+            
+            if (distToMouse < maxProximity) {
+              const factor = 1 - (distToMouse / maxProximity);
+              radius = baseRadius + (hoverRadius - baseRadius) * factor;
+              opacity = 0.07 + 0.18 * factor;
+            }
+            
+            if (rippleBonus > 0) {
+              opacity = Math.min(0.3, opacity + rippleBonus * 0.2);
+              radius = Math.min(1.3, radius + rippleBonus * 0.3);
+            }
+            
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(224, 109, 83, ${opacity})`;
+            ctx.fill();
+          }
+        }
+        
+        requestAnimationFrame(draw);
+      }
+      
+      requestAnimationFrame(draw);
+    })();
+  </script>
+
+</body>
+</html>

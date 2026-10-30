@@ -1,0 +1,4 @@
+.DS_Store
+*.log
+node_modules/
+stitch_kinship_family_operating_hub/
