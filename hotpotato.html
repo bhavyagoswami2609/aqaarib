@@ -42,9 +42,10 @@
     };
   </script>
 
-  <!-- TensorFlow.js and Pose Detection (100% Free, runs client-side in browser) -->
+  <!-- TensorFlow.js and Detection Engines (MoveNet + COCO-SSD Full Body & Person Detector) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@latest/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
   <style>
     @layer base {
@@ -137,15 +138,11 @@
     <!-- Section Header -->
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
       <div>
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#DDA74F]/20 text-[#7C5400] text-xs font-label font-bold uppercase tracking-wider mb-2">
-          <span class="w-2 h-2 rounded-full bg-[#DDA74F] animate-ping"></span>
-          Game 2 · Snapshot Elimination
-        </div>
         <h1 class="font-headline text-3xl sm:text-4xl text-[#1E1B18] font-normal tracking-tight">
           Camera Hot Potato (Freeze Tag)
         </h1>
         <p class="font-body text-sm sm:text-base text-[#6E6761] max-w-xl mt-1">
-          Pass the hot potato and dive out of the lens! When the countdown strikes zero, the camera captures a freeze-frame photo. If the AI detects you in the photo, you are out with photographic evidence!
+          Pass the hot potato and dive completely out of the frame! If any body part (leg, arm, covered head, torso) is caught in the lens when time expires, you're out with visual evidence!
         </p>
       </div>
 
@@ -174,7 +171,7 @@
             <span class="material-symbols-outlined text-[32px] text-[#E06D53]">photo_camera</span>
           </div>
           <div>
-            <div id="game-status-badge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#8A9A86]/15 text-[#3A4E37] text-xs font-label font-bold uppercase tracking-wider mb-1">
+            <div id="game-status-badge" class="hidden">
               Ready to Play
             </div>
             <div id="status-text" class="text-base sm:text-lg font-label font-bold text-[#1E1B18]">
